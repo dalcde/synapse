@@ -15,6 +15,7 @@
 
 import contextlib
 import heapq
+import logging
 import threading
 from collections import deque
 from typing import Dict, List, Set
@@ -23,6 +24,8 @@ from typing_extensions import Deque
 
 from synapse.storage.database import DatabasePool, LoggingTransaction
 from synapse.storage.util.sequence import PostgresSequenceGenerator
+
+logger = logging.getLogger(__name__)
 
 
 class IdGenerator(object):
@@ -146,7 +149,7 @@ class StreamIdGenerator(object):
 
         return manager()
 
-    def get_current_token(self):
+    def get_current_token(self, instance_name=None):
         """Returns the maximum stream id such that all stream ids less than or
         equal to it have been successfully persisted.
 
@@ -348,7 +351,7 @@ class MultiWriterIdGenerator:
 
         # Currently we don't support this operation, as it's not obvious how to
         # condense the stream positions of multiple writers into a single int.
-        raise NotImplementedError()
+        return self.get_persisted_upto_position()
 
     def get_current_token_for_writer(self, instance_name: str) -> int:
         """Returns the position of the given writer.
@@ -420,3 +423,9 @@ class MultiWriterIdGenerator:
                 # There was a gap in seen positions, so there is nothing more to
                 # do.
                 break
+
+        logger.info(
+            "Got new_id: %s, setting persited pos to %s",
+            new_id,
+            self._persisted_upto_position,
+        )
