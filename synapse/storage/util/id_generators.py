@@ -233,7 +233,7 @@ class MultiWriterIdGenerator:
         # position even though everything has been persisted. However, since
         # gaps should be relatively rare it's still worth while doing this.
         self._persisted_upto_position = (
-            min(self._current_positions.values()) if self._current_positions else 0
+            min(self._current_positions.values()) if self._current_positions else 1
         )
         self._known_persisted_positions = []  # type: List[int]
 

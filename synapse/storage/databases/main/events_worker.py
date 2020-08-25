@@ -37,7 +37,6 @@ from synapse.events import EventBase, make_event_from_dict
 from synapse.events.utils import prune_event
 from synapse.logging.context import PreserveLoggingContext, current_context
 from synapse.metrics.background_process_metrics import run_as_background_process
-from synapse.replication.slave.storage._slaved_id_tracker import SlavedIdTracker
 from synapse.replication.tcp.streams import BackfillStream
 from synapse.replication.tcp.streams.events import EventsStream
 from synapse.storage._base import SQLBaseStore, db_to_json, make_in_list_sql_clause
@@ -92,18 +91,28 @@ class EventsWorkerStore(SQLBaseStore):
                     id_column="stream_ordering",
                     sequence_name="events_stream_seq",
                 )
+                self._backfill_id_gen = MultiWriterIdGenerator(
+                    db_conn=db_conn,
+                    db=database,
+                    instance_name=hs.get_instance_name(),
+                    table="events",
+                    instance_column="instance_name",
+                    id_column="stream_ordering",
+                    sequence_name="events_backfill_stream_seq",
+                    positive=False,
+                )
             else:
                 self._stream_id_gen = StreamIdGenerator(
                     db_conn, "events", "stream_ordering",
                 )
 
-            self._backfill_id_gen = StreamIdGenerator(
-                db_conn,
-                "events",
-                "stream_ordering",
-                step=-1,
-                extra_tables=[("ex_outlier_stream", "event_stream_ordering")],
-            )
+                self._backfill_id_gen = StreamIdGenerator(
+                    db_conn,
+                    "events",
+                    "stream_ordering",
+                    step=-1,
+                    extra_tables=[("ex_outlier_stream", "event_stream_ordering")],
+                )
         else:
             # Another process is in charge of persisting events and generating
             # stream IDs: rely on the replication streams to let us know which
@@ -117,8 +126,15 @@ class EventsWorkerStore(SQLBaseStore):
                 id_column="stream_ordering",
                 sequence_name="events_stream_seq",
             )
-            self._backfill_id_gen = SlavedIdTracker(
-                db_conn, "events", "stream_ordering", step=-1
+            self._backfill_id_gen = MultiWriterIdGenerator(
+                db_conn=db_conn,
+                db=database,
+                instance_name=hs.get_instance_name(),
+                table="events",
+                instance_column="instance_name",
+                id_column="stream_ordering",
+                sequence_name="events_backfill_stream_seq",
+                positive=False,
             )
 
         self._get_event_cache = Cache(
@@ -136,7 +152,7 @@ class EventsWorkerStore(SQLBaseStore):
         if stream_name == EventsStream.NAME:
             self._stream_id_gen.advance(instance_name, token)
         elif stream_name == BackfillStream.NAME:
-            self._backfill_id_gen.advance(-token)
+            self._backfill_id_gen.advance(instance_name, -token)
 
         super().process_replication_rows(stream_name, instance_name, token, rows)
 
